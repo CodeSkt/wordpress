@@ -1,6 +1,6 @@
 ### Create cloudwatch log group for rps execution output
 resource "aws_cloudwatch_log_group" "ecs_fargate_service" {
-  name              = "/ecs/${local.app_env}-${var.app_name}-fargate"
+  name              = "/ecs/${var.app_env}-${var.app_name}-fargate"
   retention_in_days = 60
 
 }
@@ -25,7 +25,7 @@ data "template_file" "ecs_fargate_role_policy" {
 
 ### Create an IAM policy for Fargate service
 resource "aws_iam_role_policy" "ecs_fargate" {
-  name_prefix = "${local.app_env}-${var.app_parent}-${var.app_name}-fargate-role-policy-"
+  name_prefix = "${var.app_env}-${var.app_parent}-${var.app_name}-fargate-role-policy-"
   role        = aws_iam_role.ecs_fargate.id
   policy      = data.template_file.ecs_fargate_role_policy.rendered
 }
@@ -35,7 +35,6 @@ data "template_file" "wordpress_task_defination" {
 
   vars = {
     ecs_service_name     = "wordpress"
-    app_env              = local.app_env
     app_name             = var.app_name
   }
 }
@@ -54,13 +53,13 @@ resource "aws_ecs_task_definition" "wordpress" {
   tags = merge(
     local.common_tags,
     map(
-      "Name", "${local.app_env}-${var.app_parent}-${var.app_name}-fargate-task-defination"
+      "Name", "${var.app_parent}-${var.app_name}-fargate-task-defination"
     )
   )
 }
 
 resource "aws_ecs_cluster" "wordpress" {
-  name = "${local.app_env}-${var.app_name}-wordpress"
+  name = "${var.app_env}-${var.app_name}-wordpress"
 
   tags = merge(
     local.common_tags,
