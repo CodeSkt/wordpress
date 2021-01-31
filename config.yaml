@@ -1,0 +1,140 @@
+version: 2
+
+references:
+
+  add_ssh_keys_infra_modules: &add_ssh_keys_infra_modules
+    fingerprints:
+      - "7a:0d:f9:08:c0:b2:54:9c:97:8a:f8:0f:9d:d7:2a:1d"
+  # it-infra-modules public key.
+  # This is required to checkout it-infra-modules repository and refers to its deploy key.
+
+  load_bash_env: &load_bash_env
+      name: Export shared environment variables for rps.
+      command: |
+        cat ~/.env >> $BASH_ENV
+        echo "export APP_PARENT=compliance" >> ${BASH_ENV}
+        echo "export APP_NAME=rps" >> ${BASH_ENV}
+        echo 'export AWS_REGION="eu-west-1"' >> ${BASH_ENV}
+        echo 'export ANSIBLE_HDIR="$CIRCLE_WORKING_DIRECTORY/ansible"' >> ${BASH_ENV}
+        echo 'export APP_CONFIG_HOME="$CIRCLE_WORKING_DIRECTORY/ansible/config/$APP_NAME"' >> ${BASH_ENV}
+        echo 'export GIT_SHA="$CIRCLE_SHA1"' >> ${BASH_ENV}
+        cat ${BASH_ENV}
+
+jobs:
+  sts:
+    docker:
+      - image: governmentpaas/awscli
+    # Circle Working directory by default for this container is /root/project
+    # Homedir for this container is /root                       
+    steps:
+      #- run: apk add --update bash && mkdir -p /workspace/.aws
+      - run: mkdir -p /workspace/.aws
+    #  - run: apk add --update bash && mkdir -p /workspace/.aws    
+    #steps:
+    #  - run: apk add --update bash && mkdir -p /workspace/.aws
+      - run:
+          name: Initializing AWS credentials
+          command: |
+            # AWS_REGION="eu-west-1"
+            if [ "${CIRCLE_BRANCH}" = "master" ]; then
+              export AWS_ACCESS_KEY_ID=$PROD_AWS_ACCESS_KEY_ID
+              export AWS_SECRET_ACCESS_KEY=$PROD_AWS_SECRET_ACCESS_KEY
+              echo "sts to the _prod_ account, only if the circleci job is triggered by master branch."
+              # need to change role with prod account
+              export IAM_ROLE=$NONPROD_IAM_ROLE
+              AWS_ACCOUNT_TYPE="prod"
+              APP_ENVIRONMENT="prod"
+              echo "Using AWS account as: $AWS_ACCOUNT_TYPE, and application environment as: $APP_ENVIRONMENT."
+              # export to bash environment
+              echo "export AWS_ACCOUNT_TYPE=${AWS_ACCOUNT_TYPE}" >> /workspace/.env
+              echo "export APP_ENVIRONMENT=${APP_ENVIRONMENT}" >> /workspace/.env
+            else
+              echo "Default: sts to the _nonprod_ account for lower environments."
+              export AWS_ACCESS_KEY_ID=$NONPROD_AWS_ACCESS_KEY_ID
+              export AWS_SECRET_ACCESS_KEY=$NONPROD_AWS_SECRET_ACCESS_KEY
+              export IAM_ROLE=$NONPROD_IAM_ROLE
+              AWS_ACCOUNT_TYPE="nonprod"
+              BRANCH_STEM=${CIRCLE_BRANCH/\/*//}
+              APP_ENVIRONMENT=$(echo -e 'develop dev\nrelease/ uat' | awk -vX=$BRANCH_STEM '$1 == X { print $2 }')
+              echo "Using AWS account as: $AWS_ACCOUNT_TYPE, and application environment as: $APP_ENVIRONMENT."
+              # export to bash environment
+              echo "export AWS_ACCOUNT_TYPE=${AWS_ACCOUNT_TYPE}" >> /workspace/.env
+              echo "export APP_ENVIRONMENT=${APP_ENVIRONMENT}" >> /workspace/.env
+            fi
+            echo "Assume the role"
+            aws sts assume-role --role-session-name circle --role-arn $IAM_ROLE | jq -r '.Credentials | "[default]\naws_access_key_id = \(.AccessKeyId)\naws_secret_access_key = \(.SecretAccessKey)\naws_session_token = \(.SessionToken)\naws_security_token = \(.SessionToken)\nregion = eu-west-1"' > /workspace/.aws/credentials
+      - persist_to_workspace:
+          root: /workspace
+          paths:
+            - .aws/credentials
+            - .env
+
+       
+  terraform_infra_plan:
+    docker:
+      #- image: terraform_plan
+    steps:
+      - checkout
+      - attach_workspace:
+          at: ~/
+      - add_ssh_keys: *add_ssh_keys_infra_modules
+      - run: *load_bash_env
+      - run:
+          name: "Execute ansible playbook to deploy infrastructure"
+          command: |
+            cd ansible && ansible-playbook -i hosts site.yml -vvv
+          no_output_timeout: 1h
+
+  terraform_infra_apply:
+    docker:
+      #- image: terraform_apply
+    # Circle Working directory by default for this container is /root/project
+    # Homedir for this container is /root#
+    steps:
+      - checkout
+      - attach_workspace:
+          at: ~/
+      - add_ssh_keys: *add_ssh_keys_infra_modules
+      - run: *load_bash_env
+      - run:
+          name: "Execute ansible playbook to deploy infrastructure"
+          command: |
+            cd ansible && ansible-playbook -e "check_mode=no" -i hosts site.yml  -vvvv
+          no_output_timeout: 1h
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - sts
+      
+      - terraform_infra_plan:
+          requires:
+            - sts
+          filters:
+            branches:
+              only:
+                #- nonprod
+                - master
+                - develop
+
+      - terraform_infra_approve:
+          type: approval
+          requires:
+            - terraform_infra_plan
+          filters:
+            branches:
+              only:
+                #- nonprod
+                - master
+                - develop
+
+      - terraform_infra_apply:
+          requires:
+            - terraform_infra_approve
+          filters:
+            branches:
+              only:
+                #- nonprod
+                - master
+                - develop
