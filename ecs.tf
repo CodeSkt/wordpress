@@ -8,7 +8,7 @@ resource "aws_cloudwatch_log_group" "ecs_fargate_service" {
 ### Create an IAM role for Fargate service
 resource "aws_iam_role" "ecs_fargate" {
   name               = "${local.app_env}-${var.app_parent}-${var.app_name}-ecs-fargate-service-role"
-  assume_role_policy = file("${path.module}/templates/assume-ecs-task.json")
+  assume_role_policy = file("${path.module}/assume-ecs-task.json")
 
   tags = merge(
     local.common_tags,
@@ -19,7 +19,7 @@ resource "aws_iam_role" "ecs_fargate" {
 }
 
 data "template_file" "ecs_fargate_role_policy" {
-  template = file("${path.module}/templates/ecs-fargate-role-policy.json")
+  template = file("${path.module}/ecs-fargate-role-policy.json")
 
 }
 
