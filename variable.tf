@@ -14,11 +14,18 @@ variable "target_infra" {
 
 variable "app_parent" {
   description = "Application parent/category"
-  type        = "test"
+  type        = string
+  default     = "test"
 }
 
 variable "app_name" {
   description = "Application Name"
   type        = string
   default     = "wordpress"
+}
+
+variable "app_env" {
+  description = "Application env/category"
+  type        = "string"
+  default     =  "dev"
 }
