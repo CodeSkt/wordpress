@@ -31,7 +31,7 @@ resource "aws_iam_role_policy" "ecs_fargate" {
 }
 
 data "template_file" "wordpress_task_defination" {
-  template = file("${path.module}/templates/wordpress-task-defination.yaml")
+  template = file("${path.module}/templates/wordpress-task-defination.json")
 
   vars = {
     ecs_service_name     = "wordpress"
